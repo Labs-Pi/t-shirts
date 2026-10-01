@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loose Thread Rack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:ital,wght@0,400;0,500;0,700;1,500&family=Pinyon+Script&family=Yellowtail&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#e4e2dc; --ink:#1f2a44; --navy:#28314d; --muted:#6d6e73; }
+  html,body { margin:0; height:100%; background:var(--bg); overflow:hidden; font-family:Inter,system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  #c { position:fixed; inset:0; width:100%; height:100%; display:block; touch-action:none; }
+  .vignette { position:fixed; inset:0; pointer-events:none; background:radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(0,0,0,.06)); }
+  header { position:fixed; top:0; left:0; right:0; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:22px 28px; z-index:2; pointer-events:none; }
+  header > :first-child { justify-self:start; } header > :last-child { justify-self:end; }
+  header a { pointer-events:auto; font-size:11px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; color:var(--ink); text-decoration:none; }
+  .tabs { pointer-events:auto; display:flex; gap:2px; padding:3px; border-radius:999px; background:rgba(31,42,68,.07); }
+  header .tabs a { padding:6px 14px; border-radius:999px; opacity:1; transition:background .2s,color .2s; }
+  header .tabs a:hover { background:rgba(31,42,68,.08); }
+  header .tabs a[aria-current=page], header .tabs a[aria-current=page]:hover { background:var(--ink); color:#f1efea; }
+  header a:hover { opacity:.6; }
+  .logo { font-family:Yellowtail,cursive; font-size:26px; line-height:.72; color:var(--ink); transform:rotate(-7deg); text-align:center; user-select:none; }
+  .logo span { display:block; } .logo span + span { margin-left:22px; }
+  #caption { position:fixed; left:0; top:0; transform:translate(-50%,0); text-align:center; pointer-events:none; opacity:0; transition:opacity .35s ease; white-space:nowrap; }
+  #caption.on { opacity:1; transition-delay:.2s; }
+  #caption .name { font-size:12px; color:#3d3e42; }
+  #caption .meta { font-size:10px; color:#8a8a8e; margin-top:4px; letter-spacing:.06em; text-transform:uppercase; }
+  .cta { position:fixed; left:50%; bottom:58px; transform:translateX(-50%); z-index:2; border:1px solid var(--ink); border-radius:999px; background:transparent; color:var(--ink); padding:7px 18px; font:500 10.5px Inter,sans-serif; letter-spacing:.1em; text-transform:uppercase; cursor:pointer; transition:background .2s,color .2s; }
+  .cta:hover { background:var(--ink); color:var(--bg); }
+  .ticker { position:fixed; left:0; right:0; bottom:0; height:30px; background:var(--navy); border-top:3px solid #3c4666; overflow:hidden; z-index:2; display:flex; align-items:center; }
+  .track { display:flex; white-space:nowrap; animation:marquee 38s linear infinite; }
+  .track span { font:italic 500 11px Inter,sans-serif; color:#dfe3ee; letter-spacing:.04em; text-transform:uppercase; padding:0 18px; }
+  .track span::after { content:"•"; margin-left:36px; opacity:.7; }
+  @keyframes marquee { to { transform:translateX(-50%); } }
+  @media (prefers-reduced-motion: reduce) { .track { animation:none; } }
+  #toast { position:fixed; left:50%; bottom:100px; transform:translate(-50%,8px); background:var(--ink); color:#eef0f6; font-size:12px; padding:9px 14px; border-radius:8px; opacity:0; transition:.3s; pointer-events:none; z-index:3; }
+  #toast.on { opacity:1; transform:translate(-50%,0); }
+  #loader { position:fixed; inset:0; display:grid; place-items:center; background:var(--bg); z-index:5; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); transition:opacity .6s; }
+  #loader.off { opacity:0; pointer-events:none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vignette"></div>
+<header>
+  <nav class="tabs" aria-label="Pages"><a href="index.html" aria-current="page">Rack</a><a href="tee.html">Tee</a></nav>
+  <div class="logo"><span>Loose</span><span>Thread</span></div>
+  <a href="#">Contact</a>
+</header>
+<div id="caption"><div class="name"></div><div class="meta"></div></div>
+<button class="cta" id="cta">See availability</button>
+<div class="ticker"><div class="track" id="track"></div></div>
+<div id="toast"></div>
+<div id="loader">Hanging the rack…</div>
+
+<script src="shirt-data.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
+
+{
+  const words = ['New designs daily', 'Subscribe to our newsletter'];
+  let html = ''; for (let i = 0; i < 16; i++) html += `<span>${words[i % 2]}</span>`;
+  document.getElementById('track').innerHTML = html + html;
+}
+await Promise.race([
+  Promise.all(['40px "Pinyon Script"', '40px Yellowtail', '40px "Archivo Black"', '700 20px Inter', '500 20px Inter'].map(f => document.fonts.load(f))),
+  new Promise(r => setTimeout(r, 3000)),
+]);
+
+// ---------------------------------------------------------------- layout constants (metres-ish)
+const RAIL_Y = 0.42, RAIL_LEN = 4.1, WALL_Z = -0.48, HOOK = 0.11;
+const SIDE = 1.32;                                   // idle yaw: shirts hang side-on
+const BASE = 0.36, SIDE_GAP = 0.3, FOCUS_SLOT = 0.8;
+
+// ---------------------------------------------------------------- helpers
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const isDark = hex => { const n = parseInt(hex.slice(1), 16); return ((n >> 16) * 0.3 + (n >> 8 & 255) * 0.59 + (n & 255) * 0.11) < 110; };
+function txt(x, s, font, color, u, v, S) { x.font = font; x.fillStyle = color; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(s, u * S, v * S); }
+function spaced(x, px) { if ('letterSpacing' in x) x.letterSpacing = px + 'px'; }
+function flower(x, cx, cy, r, n, col, center) {
+  x.save(); x.translate(cx, cy); x.fillStyle = col;
+  for (let i = 0; i < n; i++) { x.rotate(Math.PI * 2 / n); x.beginPath(); x.ellipse(r * 0.55, 0, r * 0.5, r * 0.24, 0, 0, 7); x.fill(); }
+  x.fillStyle = center; x.beginPath(); x.arc(0, 0, r * 0.22, 0, 7); x.fill(); x.restore();
+}
+function leaf(x, cx, cy, r, a) { x.save(); x.translate(cx, cy); x.rotate(a); x.fillStyle = '#3f7a4a'; x.beginPath(); x.ellipse(r, 0, r, r * 0.35, 0, 0, 7); x.fill(); x.restore(); }
+function circleText(x, s, cx, cy, r, font, color) {
+  x.font = font; x.fillStyle = color; x.textAlign = 'center'; x.textBaseline = 'middle';
+  const ch = [...s], step = Math.PI * 2 / ch.length;
+  ch.forEach((c, i) => { x.save(); x.translate(cx, cy); x.rotate(i * step); x.translate(0, -r); x.fillText(c, 0, 0); x.restore(); });
+}
+function sparkle(x, cx, cy, r, col) {
+  x.fillStyle = col; x.beginPath();
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, rr = i % 2 ? r * 0.28 : r; x.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+  x.fill();
+}
+
+// ---------------------------------------------------------------- catalogue
+// prints are drawn into a square that is projected onto the chest (wearer's left = canvas right)
+const SPECS = [
+  { name: 'Relic Camo Tee', price: '$44', color: '#ffffff', fabric: 'camo' },
+  { name: 'Night Shift Blank', price: '$32', color: '#1c1c1f',
+    print(x, S) { txt(x, 'lt', `${S * 0.09}px Yellowtail`, '#e9e4d8', 0.72, 0.2, S); } },
+  { name: 'Slow Made Tee', price: '$38', color: '#efede7',
+    print(x, S) { txt(x, 'loose thread', `${S * 0.06}px Yellowtail`, '#1d2340', 0.72, 0.2, S); } },
+  { name: 'Stay Soft, Stay Strange Tee', price: '$42', color: '#17171a',
+    print(x, S) {
+      const f = `${S * 0.15}px "Pinyon Script"`, c = '#efe9dc';
+      txt(x, 'Stay Soft,', f, c, 0.5, 0.3, S); txt(x, 'Stay', f, c, 0.5, 0.45, S); txt(x, 'Strange', f, c, 0.5, 0.6, S);
+      spaced(x, 10); txt(x, 'LOOSE THREAD', `700 ${S * 0.03}px Inter`, c, 0.5, 0.75, S); spaced(x, 0);
+    } },
+  { name: 'Garment Club Crest Tee', price: '$40', color: '#1f4a3a',
+    print(x, S) {
+      const cx = 0.5 * S, cy = 0.45 * S, R = 0.22 * S, c = '#ece5d3';
+      x.strokeStyle = c; x.lineWidth = 6; x.beginPath(); x.arc(cx, cy, R, 0, 7); x.stroke();
+      x.lineWidth = 3; x.beginPath(); x.arc(cx, cy, R * 0.7, 0, 7); x.stroke();
+      circleText(x, 'GARMENT CLUB · LOOSE THREAD · ', cx, cy, R * 0.85, `700 ${S * 0.034}px Inter`, c);
+      txt(x, 'lt', `${S * 0.14}px Yellowtail`, c, 0.5, 0.45, S);
+    } },
+  { name: 'Night People Tee', price: '$40', color: '#19191d',
+    print(x, S) {
+      const cx = 0.5 * S, cy = 0.36 * S, r = 0.11 * S, c = '#efe6cf';
+      x.fillStyle = c; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill();
+      x.globalCompositeOperation = 'destination-out'; x.beginPath(); x.arc(cx + r * 0.45, cy - r * 0.22, r * 0.88, 0, 7); x.fill();
+      x.globalCompositeOperation = 'source-over';
+      sparkle(x, cx + r * 1.6, cy - r * 0.9, r * 0.28, c); sparkle(x, cx - r * 1.7, cy + r * 0.2, r * 0.18, c); sparkle(x, cx + r * 1.2, cy + r * 0.9, r * 0.14, c);
+      txt(x, 'night people', `${S * 0.12}px "Pinyon Script"`, c, 0.5, 0.6, S);
+    } },
+  { name: 'Grown Here Flowers Tee', price: '$42', color: '#f2f1ec',
+    print(x, S) {
+      txt(x, 'Grown', `${S * 0.2}px Yellowtail`, '#1d2340', 0.5, 0.27, S);
+      const r = rng(5), cols = ['#d6423a', '#f08a2e', '#3f63c9', '#e46fa4', '#f2c230', '#7a4fc0'];
+      for (let i = 0; i < 10; i++) leaf(x, (0.28 + r() * 0.44) * S, (0.4 + r() * 0.1) * S, S * 0.035, r() * 6.28);
+      for (let i = 0; i < 11; i++) flower(x, (0.27 + r() * 0.46) * S, (0.39 + r() * 0.12) * S, S * (0.03 + r() * 0.03), 5 + (i % 3), cols[i % cols.length], '#f7e28a');
+      txt(x, 'Here', `${S * 0.2}px Yellowtail`, '#1d2340', 0.53, 0.63, S);
+    } },
+  { name: 'Soft Goods Blush Tee', price: '$36', color: '#ead3cd',
+    print(x, S) { txt(x, 'soft goods', `${S * 0.1}px "Pinyon Script"`, '#9b2f3a', 0.5, 0.3, S); } },
+  { name: 'Handle With Care Tee', price: '$38', color: '#ede6d6',
+    print(x, S) {
+      x.save(); x.translate(0.5 * S, 0.42 * S); x.rotate(-0.06);
+      x.strokeStyle = '#b0472b'; x.lineWidth = 8; x.strokeRect(-0.3 * S, -0.15 * S, 0.6 * S, 0.3 * S);
+      x.lineWidth = 3; x.strokeRect(-0.28 * S, -0.13 * S, 0.56 * S, 0.26 * S);
+      x.translate(-0.5 * S, -0.42 * S);
+      txt(x, 'HANDLE', `${S * 0.09}px "Archivo Black"`, '#b0472b', 0.5, 0.37, S);
+      txt(x, 'WITH CARE', `${S * 0.09}px "Archivo Black"`, '#b0472b', 0.5, 0.46, S);
+      spaced(x, 8); txt(x, 'EST. 2026', `700 ${S * 0.026}px Inter`, '#b0472b', 0.5, 0.52, S); spaced(x, 0);
+      x.restore();
+    } },
+  { name: 'Archive Heather Tee', price: '$38', color: '#ffffff', fabric: 'heather',
+    print(x, S) {
+      txt(x, 'ARCHIVE', `${S * 0.17}px "Archivo Black"`, '#1b1b1d', 0.5, 0.4, S);
+      spaced(x, 6); txt(x, 'NO. 010 — HEAVYWEIGHT COTTON', `700 ${S * 0.026}px Inter`, '#1b1b1d', 0.5, 0.5, S); spaced(x, 0);
+    } },
+];
+const N = SPECS.length;
+
+// ---------------------------------------------------------------- renderer / scene
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.VSMShadowMap;
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#e4e2dc');
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.8;
+new RGBELoader().load('https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr', hdr => {
+  scene.environment = pmrem.fromEquirectangular(hdr).texture; hdr.dispose();
+  scene.environmentIntensity = 1.3;
+});
+
+const camera = new THREE.PerspectiveCamera(20, 1, 0.05, 60);
+scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+const key = new THREE.DirectionalLight(0xffffff, 1.1);
+key.position.set(-0.9, 1.1, 4.2);
+key.target.position.set(0, 0, WALL_Z);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.radius = 14; key.shadow.blurSamples = 20;
+key.shadow.bias = -0.0005;
+Object.assign(key.shadow.camera, { left: -2.6, right: 2.6, top: 1.2, bottom: -1.2, near: 1, far: 9 });
+scene.add(key, key.target);
+
+// pegboard wall
+{
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f0eee8'; x.fillRect(0, 0, 128, 128);
+  x.fillStyle = 'rgba(0,0,0,.05)'; x.beginPath(); x.arc(64, 64, 12, 0, 7); x.fill();
+  x.strokeStyle = 'rgba(0,0,0,.14)'; x.lineWidth = 2; x.beginPath(); x.arc(64, 64, 12, 0, 7); x.stroke();
+  x.strokeStyle = 'rgba(255,255,255,.6)'; x.lineWidth = 1.5; x.beginPath(); x.arc(64, 65.5, 13, 0.3, Math.PI - 0.3); x.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = maxAniso;
+  const WW = 30, WH = 18, SP = 0.12; tex.repeat.set(WW / SP, WH / SP);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(WW, WH), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, envMapIntensity: 0.6 }));
+  wall.position.z = WALL_Z; wall.receiveShadow = true; scene.add(wall);
+}
+
+// chrome rail with wall brackets
+const chrome = new THREE.MeshStandardMaterial({ color: 0xdadde2, metalness: 1, roughness: 0.2 });
+{
+  const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, RAIL_LEN, 32), chrome);
+  rail.rotation.z = Math.PI / 2; rail.position.y = RAIL_Y; rail.castShadow = true; scene.add(rail);
+  for (const s of [-1, 1]) {
+    const ex = s * RAIL_LEN / 2;
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.05, 24), chrome);
+    cap.rotation.z = Math.PI / 2; cap.position.set(ex, RAIL_Y, 0); cap.castShadow = true;
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, -WALL_Z, 16), chrome);
+    arm.rotation.x = Math.PI / 2; arm.position.set(ex, RAIL_Y, WALL_Z / 2); arm.castShadow = true;
+    const flange = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.012, 32), chrome);
+    flange.rotation.x = Math.PI / 2; flange.position.set(ex, RAIL_Y, WALL_Z + 0.006);
+    scene.add(cap, arm, flange);
+  }
+}
+
+// ---------------------------------------------------------------- shirt model
+// The model's baked AO has a dark smear across the back panel (right half of the atlas):
+// rebuild the back from max(back, mirrored front) so only genuine seam/fold occlusion remains.
+function cleanAO(tex) {
+  const img = tex.image, w = img.width, h = img.height;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'); x.drawImage(img, 0, 0);
+  const d = x.getImageData(0, 0, w, h), px = d.data, yMax = Math.round(h * 0.72);
+  for (let y = 0; y < yMax; y++) for (let X = w >> 1; X < w; X++) {
+    const i = (y * w + X) * 4, j = (y * w + (w - 1 - X)) * 4;
+    if (px[j] < 8) continue;
+    const v = Math.max(px[i], px[j]);
+    px[i] = px[i + 1] = px[i + 2] = v;
+  }
+  x.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = tex.flipY; t.wrapS = tex.wrapS; t.wrapT = tex.wrapT; t.colorSpace = tex.colorSpace; t.channel = tex.channel;
+  return t;
+}
+
+const bin = Uint8Array.from(atob(window.SHIRT_GLB), ch => ch.charCodeAt(0)).buffer;
+const gltf = await new GLTFLoader().parseAsync(bin, '');
+const baseMesh = gltf.scene.getObjectByName('T_Shirt_male');
+const shirtGeo = baseMesh.geometry; shirtGeo.center();
+const normalMap = baseMesh.material.normalMap, aoMap = cleanAO(baseMesh.material.aoMap);
+baseMesh.position.set(0, 0, 0); baseMesh.rotation.set(0, 0, 0); baseMesh.scale.setScalar(1); baseMesh.updateMatrixWorld(true);
+
+// shoulder line (for the hanger) and chest point (for prints), measured on the model
+const caster = new THREE.Raycaster();
+const topAt = xx => { caster.set(new THREE.Vector3(xx, 2, 0), new THREE.Vector3(0, -1, 0)); return caster.intersectObject(baseMesh)[0]?.point.y ?? 0.25; };
+const yNeck = topAt(0.085), yMid = topAt(0.13), yEnd = topAt(0.19);
+const SHIRT_Y = -HOOK + 0.014 - yNeck;          // shirt offset inside its hanger pivot
+caster.set(new THREE.Vector3(0, 0.1, 2), new THREE.Vector3(0, 0, -1));
+const chest = caster.intersectObject(baseMesh)[0]?.point ?? new THREE.Vector3(0, 0.1, 0.14);
+const decalGeo = new DecalGeometry(baseMesh, chest, new THREE.Euler(), new THREE.Vector3(0.24, 0.24, 0.18));
+const SHIRT_BOTTOM = new THREE.Box3().setFromBufferAttribute(shirtGeo.attributes.position).min.y + SHIRT_Y;
+
+// hanger parts (pivot space: origin on the rail)
+const hookGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+  [0, -HOOK - 0.005], [0, -0.06], [-0.006, -0.03], [-0.026, -0.006], [-0.022, 0.022], [0, 0.034], [0.022, 0.022], [0.031, 0], [0.026, -0.02],
+].map(p => new THREE.Vector3(...p, 0))), 64, 0.0042, 8);
+const woodGeo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+  [-0.2, yEnd - 0.03], [-0.13, yMid - 0.024], [0, yNeck - 0.016], [0.13, yMid - 0.024], [0.2, yEnd - 0.03],
+].map(([px, py]) => new THREE.Vector3(px, py + SHIRT_Y, 0))), 48, 0.011, 10);
+const woodMat = new THREE.MeshStandardMaterial({ color: 0x6b3024, roughness: 0.45 });
+
+// ---------------------------------------------------------------- fabric textures
+function camoTexture() {
+  const S = 1024, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d'), r = rng(11), cols = ['#3a2f27', '#6d5b44', '#8b7b5b', '#2a241f', '#a18f6b', '#524233', '#77684f'];
+  x.fillStyle = '#5a4a3c'; x.fillRect(0, 0, S, S);
+  for (let i = 0; i < 1600; i++) { x.fillStyle = cols[i % cols.length]; x.globalAlpha = 0.85; x.beginPath();
+    x.ellipse(r() * S, r() * S, 8 + r() * 26, 4 + r() * 14, r() * Math.PI, 0, 7); x.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.flipY = false; return t;
+}
+function heatherTexture() {
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d'), d = x.createImageData(S, S), r = rng(4);
+  for (let i = 0; i < d.data.length; i += 4) { const v = 118 + (r() - 0.5) * 60 + ((i >> 2) % S % 3 === 0 ? 8 : 0); d.data[i] = v; d.data[i + 1] = v + 1; d.data[i + 2] = v + 4; d.data[i + 3] = 255; }
+  x.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); return t;
+}
+function printTexture(fn) {
+  const S = 1024, c = document.createElement('canvas'); c.width = c.height = S;
+  fn(c.getContext('2d'), S);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = maxAniso; return t;
+}
+
+// breeze + flutter + fingertip press, displaced radially so outer fabric, hem folds and inside move together
+const uTime = { value: 0 };
+function fabricMotion(mat, u) {
+  mat.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, u, { uTime });
+    sh.vertexShader = 'uniform float uTime, uPhase, uFlutter, uPushAmt, uGust; uniform vec3 uPush, uWind;\n' + sh.vertexShader.replace('#include <begin_vertex>', `
+      #include <begin_vertex>
+      vec3 radial = normalize(vec3(position.x, 0.0, position.z) + vec3(0.0, 0.0, 1e-4));
+      float hem = smoothstep(0.02, -0.3, position.y) + smoothstep(0.17, 0.27, abs(position.x)) * 0.6;
+      float t = uTime + uPhase;
+      float w = sin(t * 1.5 + position.y * 13.0 + position.x * 5.0) * 0.6 + sin(t * 2.2 + position.x * 17.0 - position.y * 4.0) * 0.4;
+      float f = sin(t * 9.0 + position.y * 22.0 + position.x * 9.0);
+      transformed += radial * hem * (w * 0.0024 + f * 0.006 * (uFlutter + uGust * 0.7));
+      // cursor gust: fabric billows along the wind, loose hem and sleeves the most
+      float loose = smoothstep(0.2, -0.3, position.y) * 0.8 + smoothstep(0.15, 0.27, abs(position.x)) * 0.5 + 0.15;
+      float g = 0.75 + 0.25 * sin(t * 11.0 + position.y * 26.0 + position.x * 13.0);
+      transformed += uWind * uGust * loose * g * 0.009;
+      float d = distance(position, uPush);
+      transformed -= radial * uPushAmt * exp(-d * d / 0.0035);
+    `);
+  };
+}
+
+// ---------------------------------------------------------------- shirts on hangers
+class Shirt {
+  constructor(spec, i) {
+    this.spec = spec; this.i = i;
+    this.u = { uPhase: { value: i * 1.37 }, uFlutter: { value: 0 }, uGust: { value: 0 }, uWind: { value: new THREE.Vector3() }, uPush: { value: new THREE.Vector3(0, 0, 9) }, uPushAmt: { value: 0 } };
+    const mat = new THREE.MeshPhysicalMaterial({
+      color: spec.color, roughness: 1, metalness: 0, side: THREE.DoubleSide,
+      sheen: 1, sheenRoughness: 0.55, sheenColor: new THREE.Color(spec.color === '#ffffff' ? '#cfcac0' : spec.color).lerp(new THREE.Color('#fff'), 0.22),
+      normalMap, normalScale: new THREE.Vector2(1.4, 1.4), aoMap, aoMapIntensity: 1,
+      map: spec.fabric === 'camo' ? camoTex : spec.fabric === 'heather' ? heatherTex : null,
+    });
+    fabricMotion(mat, this.u);
+    this.mesh = new THREE.Mesh(shirtGeo, mat);
+    this.mesh.position.y = SHIRT_Y; this.mesh.castShadow = true;
+
+    this.pivot = new THREE.Group();
+    this.pivot.add(this.mesh);
+    if (spec.print) {
+      const dm = new THREE.MeshPhysicalMaterial({
+        map: printTexture(spec.print), transparent: true, roughness: 0.9, sheen: 0.4, sheenRoughness: 0.7,
+        normalMap, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false,
+      });
+      fabricMotion(dm, this.u);
+      this.mesh.add(new THREE.Mesh(decalGeo, dm));
+    }
+    const hook = new THREE.Mesh(hookGeo, chrome), wood = new THREE.Mesh(woodGeo, woodMat);
+    hook.castShadow = wood.castShadow = true;
+    this.pivot.add(hook, wood);
+    scene.add(this.pivot);
+
+    this.jit = (rng(i * 17 + 3)() - 0.5) * 0.12;
+    this.x = this.tx = (i - (N - 1) / 2) * BASE; this.vx = 0;
+    this.th = this.tth = SIDE + this.jit; this.vth = 0;
+    this.phi = 0; this.vphi = 0;
+    this.flipped = false;
+    this.pushTarget = new THREE.Vector3(0, 0, 9); this.pushAmtTarget = 0; this.pushVel = 0;
+  }
+  update(dt) {
+    const ax = 110 * (this.tx - this.x) - 21 * this.vx;
+    this.vx += ax * dt; this.x += this.vx * dt;
+    const tth = this.tth + Math.atan2(-this.x, camera.position.z);    // every shirt reads the same despite perspective
+    const ath = 85 * (tth - this.th) - 18.4 * this.vth;
+    this.vth += ath * dt; this.th += this.vth * dt;
+    const aphi = -38 * this.phi - 4 * this.vphi - ax * 0.05;          // hanger swings when it slides
+    this.vphi += aphi * dt; this.phi += this.vphi * dt;
+    this.pivot.position.set(this.x, RAIL_Y, 0);
+    this.pivot.rotation.set(0, this.th, this.phi, 'ZYX');
+
+    // wind from the cursor: strength from mouse speed, falling off with distance to this shirt
+    const dx = mouse.x - this.x, dy = mouse.y - (RAIL_Y + SHIRT_BOTTOM * 0.5);
+    const near = mouse.on ? Math.exp(-(dx * dx) / 0.045 - (dy * dy) / 0.12) : 0;
+    const speed = Math.hypot(mouse.vx, mouse.vy);
+    const gust = Math.min(1, speed * 0.45) * near;
+    this.u.uGust.value += (gust - this.u.uGust.value) * (1 - Math.exp(-(gust > this.u.uGust.value ? 10 : 2.5) * dt));
+    if (speed > 1e-3) {
+      _w.set(mouse.vx, mouse.vy * 0.4, -0.35 * speed).normalize();
+      _q.copy(this.pivot.quaternion).invert(); _w.applyQuaternion(_q);
+      this.u.uWind.value.lerp(_w, 1 - Math.exp(-8 * dt));
+    }
+    this.vphi += mouse.vx * near * 1.6 * dt;                          // gust nudges the hanger
+    if (this.i !== focus) this.vth += mouse.vx * near * 1.2 * dt;     // side-on shirts twist a touch
+    const fl = Math.min(1, Math.abs(this.vth) * 0.35 + Math.abs(this.vx) * 3);
+    this.u.uFlutter.value += (fl - this.u.uFlutter.value) * (1 - Math.exp(-6 * dt));
+    this.u.uPush.value.lerp(this.pushTarget, 1 - Math.exp(-14 * dt));
+    this.pushVel += ((this.pushAmtTarget - this.u.uPushAmt.value) * 140 - this.pushVel * 13) * dt;
+    this.u.uPushAmt.value += this.pushVel * dt;
+  }
+}
+const camoTex = camoTexture(), heatherTex = heatherTexture();
+const _w = new THREE.Vector3(), _q = new THREE.Quaternion();
+const mouse = { on: false, x: 0, y: 0, vx: 0, vy: 0, lx: 0, ly: 0, lt: 0 };
+const shirts = SPECS.map((s, i) => new Shirt(s, i));
+
+// ---------------------------------------------------------------- focus / layout
+let focus = -1;
+function layout(f) {
+  if (f < 0) return SPECS.map((_, i) => (i - (N - 1) / 2) * BASE);
+  const ws = SPECS.map((_, i) => i === f ? FOCUS_SLOT : SIDE_GAP);
+  let cur = -ws.reduce((a, b) => a + b) / 2;
+  return ws.map(w => { const x = cur + w / 2; cur += w; return x; });
+}
+const slotW = (i, f) => f < 0 ? BASE : i === f ? FOCUS_SLOT : SIDE_GAP;
+function applyTargets() {
+  const xs = layout(focus);
+  shirts.forEach((s, i) => { s.tx = xs[i]; s.tth = i === focus ? (s.flipped ? Math.PI : 0) : SIDE + s.jit; });
+}
+const capEl = document.getElementById('caption');
+function setFocus(i) {
+  if (i === focus) return;
+  if (focus >= 0) { shirts[focus].flipped = false; shirts[focus].pushAmtTarget = 0; }
+  focus = i; applyTargets();
+  if (i >= 0) {
+    capEl.querySelector('.name').textContent = SPECS[i].name;
+    capEl.querySelector('.meta').textContent = `${SPECS[i].price} · click to turn`;
+    capEl.classList.remove('on'); void capEl.offsetWidth; capEl.classList.add('on');
+  } else capEl.classList.remove('on');
+}
+
+// ---------------------------------------------------------------- pointer
+const ndc = new THREE.Vector2(), ray = new THREE.Raycaster(), plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hitP = new THREE.Vector3();
+function aim(e) { ndc.set(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera); }
+function slotAt() {
+  const p = ray.ray.intersectPlane(plane, hitP);
+  if (!p || p.y > RAIL_Y + 0.06 || p.y < RAIL_Y + SHIRT_BOTTOM - 0.03) return -1;
+  const xs = layout(focus);
+  for (let i = 0; i < N; i++) if (Math.abs(p.x - xs[i]) <= slotW(i, focus) / 2) return i;
+  return -1;
+}
+let leaveTimer = 0, switchTimer = 0, pendingSlot = -1;
+canvas.addEventListener('pointermove', e => {
+  aim(e);
+  const wp = ray.ray.intersectPlane(plane, new THREE.Vector3());
+  if (wp) {
+    const now = performance.now();
+    if (mouse.on) {
+      const dt = Math.max(8, now - mouse.lt) / 1000;
+      mouse.vx = THREE.MathUtils.clamp((wp.x - mouse.lx) / dt, -3, 3);
+      mouse.vy = THREE.MathUtils.clamp((wp.y - mouse.ly) / dt, -3, 3);
+    }
+    mouse.on = true; mouse.x = mouse.lx = wp.x; mouse.y = mouse.ly = wp.y; mouse.lt = now;
+  }
+  const s = slotAt();
+  canvas.style.cursor = s >= 0 ? 'pointer' : '';
+  // fingertip press on the shirt under the cursor
+  shirts.forEach(sh => { sh.pushAmtTarget = 0; });
+  if (s >= 0) {
+    const sh = shirts[s], hit = ray.intersectObject(sh.mesh, false)[0];
+    if (hit) { sh.pushTarget.copy(sh.mesh.worldToLocal(hit.point.clone())); sh.pushAmtTarget = s === focus ? 0.006 : 0.004; }
+  }
+  if (e.pointerType === 'touch') return;
+  if (s >= 0) {
+    clearTimeout(leaveTimer); leaveTimer = 0;
+    if (focus < 0) setFocus(s);
+    else if (s !== focus && s !== pendingSlot) { pendingSlot = s; clearTimeout(switchTimer); switchTimer = setTimeout(() => { setFocus(pendingSlot); pendingSlot = -1; }, 45); }
+    else if (s === focus) { clearTimeout(switchTimer); pendingSlot = -1; }
+  } else if (focus >= 0 && !leaveTimer) {
+    leaveTimer = setTimeout(() => { leaveTimer = 0; clearTimeout(switchTimer); pendingSlot = -1; setFocus(-1); }, 220);
+  }
+});
+canvas.addEventListener('pointerleave', () => { mouse.on = false; mouse.vx = mouse.vy = 0; clearTimeout(switchTimer); pendingSlot = -1; clearTimeout(leaveTimer); leaveTimer = 0; shirts.forEach(sh => { sh.pushAmtTarget = 0; }); setFocus(-1); });
+canvas.addEventListener('pointerdown', e => {
+  aim(e); const s = slotAt();
+  if (s < 0) { if (e.pointerType === 'touch') setFocus(-1); return; }
+  if (s === focus) { shirts[s].flipped = !shirts[s].flipped; applyTargets(); }
+  else setFocus(s);
+});
+const toast = document.getElementById('toast');
+document.getElementById('cta').addEventListener('click', () => {
+  toast.textContent = focus >= 0 ? `${SPECS[focus].name}: S, M, L in stock. XL restocks Friday.` : 'All pieces in stock. New drops every week.';
+  toast.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => toast.classList.remove('on'), 2600);
+});
+
+// ---------------------------------------------------------------- sizing
+const CAM_Y = 0.06;
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const d = Math.max((RAIL_LEN + 0.35) / (2 * tan * camera.aspect), 1.75 / (2 * tan));
+  camera.position.set(0, CAM_Y, d);
+  camera.lookAt(0, CAM_Y, 0);
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+// ---------------------------------------------------------------- loop
+const clock = new THREE.Clock(), capPos = new THREE.Vector3();
+const hf = location.hash.match(/f=(\d+)/);
+if (hf) { setFocus(+hf[1]); shirts.forEach(s => { s.x = s.tx; s.th = s.tth + Math.atan2(-s.x, camera.position.z); }); }
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 1 / 30);
+  uTime.value = clock.elapsedTime;
+  const decay = Math.exp(-7 * dt); mouse.vx *= decay; mouse.vy *= decay;
+  // two half-steps keep the springs stable on slow frames
+  for (let k = 0; k < 2; k++) for (const s of shirts) s.update(dt / 2);
+  if (focus >= 0) {
+    capPos.set(shirts[focus].x, RAIL_Y + SHIRT_BOTTOM - 0.045, 0).project(camera);
+    capEl.style.left = ((capPos.x + 1) / 2 * innerWidth) + 'px';
+    capEl.style.top = ((1 - capPos.y) / 2 * innerHeight) + 'px';
+  }
+  renderer.render(scene, camera);
+});
+document.getElementById('loader').classList.add('off');
+</script>
+</body>
+</html>
